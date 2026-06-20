@@ -1,5 +1,7 @@
+using LinearAlgebra
+
 function tv1d_condat(y::Vector{Ty}, λ::U) where {Ty <: Number, U <: Real}
-    T = promote_type(Ty, Float16)
+    T = promote_type(Ty, Float64)
     N = length(y)
     if N == 0
         return T[]
