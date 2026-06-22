@@ -801,7 +801,7 @@ version = "1.11.0"
 
 [[deps.ProxTV]]
 deps = ["JuliaFormatter", "LinearAlgebra", "OpenBLAS32_jll", "ShiftedProximalOperators", "proxTV_jll"]
-path = "ProxTV.jl"
+path = "../ProxTV.jl"
 uuid = "925ea013-038b-5ab6-a1ab-e0849925e528"
 version = "1.2.3"
 
