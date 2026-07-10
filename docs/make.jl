@@ -7,6 +7,7 @@ const DOCS = @__DIR__
 const REPO = dirname(DOCS)
 const LIT = joinpath(DOCS, "lit", "examples")
 const GENERATED = joinpath(DOCS, "src", "examples")
+const CI = get(ENV, "CI", "false") == "true"
 
 mkpath(GENERATED)
 mkpath(joinpath(DOCS, "src", "assets"))
@@ -23,7 +24,11 @@ end
 
 makedocs(
     sitename="TV Denoising",
-    format=Documenter.HTML(prettyurls=false, edit_link=nothing, inventory_version="dev"),
+    format=Documenter.HTML(
+        prettyurls=CI,
+        edit_link=CI ? "main" : nothing,
+        inventory_version="dev",
+    ),
     pages=[
         "Home" => "index.md",
         "Examples" => [

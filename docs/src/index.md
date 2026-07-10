@@ -34,7 +34,14 @@ deploydocs(
 )
 ```
 
-For GitHub Actions deployment, the docs environment must be reproducible on the runner. If TVDenoise.jl remains a local path dependency, the workflow must either clone that repository into a known path or replace the local dependency with a URL dependency.
+The GitHub Actions workflow in `.github/workflows/Documentation.yml` does this by:
+
+1. checking out this repository;
+2. checking out `nikopj/TVDenoise.jl` into `TVDenoise.jl`;
+3. running `Pkg.develop(path="TVDenoise.jl")` in the docs environment;
+4. building the Literate examples and deploying the Documenter site.
+
+On pushes to `main`, Documenter deploys the generated HTML to the `gh-pages` branch. On pull requests, it builds the docs but does not publish them.
 
 ## Examples
 

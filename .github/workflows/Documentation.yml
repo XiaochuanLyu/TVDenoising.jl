@@ -1,0 +1,55 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: read
+
+    env:
+      GKSwstype: "100"
+
+    steps:
+      - name: Checkout TV_Denoising
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout TVDenoise.jl comparison package
+        uses: actions/checkout@v4
+        with:
+          repository: nikopj/TVDenoise.jl
+          path: TVDenoise.jl
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Cache Julia artifacts and packages
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate docs environment
+        run: |
+          julia --project=docs -e '
+            import Pkg
+            Pkg.develop(path="TVDenoise.jl")
+            Pkg.instantiate()
+          '
+
+      - name: Build and deploy documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: julia --project=docs docs/make.jl
