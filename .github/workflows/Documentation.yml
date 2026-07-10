@@ -49,6 +49,19 @@ jobs:
             Pkg.instantiate()
           '
 
+      - name: Smoke test docs dependencies
+        run: |
+          julia --project=docs -e '
+            using LinearAlgebra
+            using ProxTV
+            using TVDenoise
+            y = randn(16)
+            x, hist = tvd(y, 0.1, 5.0; maxit=1000, tol=1e-8, verbose=false)
+            @assert length(x) == length(y)
+            @assert hist.k > 0
+            println("TVDenoise smoke test passed with iterations = ", hist.k)
+          '
+
       - name: Build and deploy documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
