@@ -33,6 +33,13 @@ jobs:
           repository: nikopj/TVDenoise.jl
           path: TVDenoise.jl
 
+      - name: Checkout ProxTV.jl reference package
+        uses: actions/checkout@v4
+        with:
+          repository: XiaochuanLyu/ProxTV.jl
+          ref: HL/Bug-Fix-1
+          path: ProxTV.jl
+
       - name: Set up Julia
         uses: julia-actions/setup-julia@v2
         with:
@@ -45,6 +52,7 @@ jobs:
         run: |
           julia --project=docs -e '
             import Pkg
+            Pkg.develop(path="ProxTV.jl")
             Pkg.develop(path="TVDenoise.jl")
             Pkg.instantiate()
           '
@@ -56,10 +64,14 @@ jobs:
             using ProxTV
             using TVDenoise
             y = randn(16)
+            h = NormTVp(0.1, 1.0, length(y))
+            xp = similar(y, Float64)
+            prox!(xp, h, y, 1.0)
             x, hist = tvd(y, 0.1, 5.0; maxit=1000, tol=1e-8, verbose=false)
+            @assert length(xp) == length(y)
             @assert length(x) == length(y)
             @assert hist.k > 0
-            println("TVDenoise smoke test passed with iterations = ", hist.k)
+            println("ProxTV and TVDenoise smoke tests passed; TVDenoise iterations = ", hist.k)
           '
 
       - name: Build and deploy documentation
