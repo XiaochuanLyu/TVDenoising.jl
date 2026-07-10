@@ -50,11 +50,15 @@ jobs:
 
       - name: Instantiate docs environment
         run: |
+          sed -i '/^ProxTV = /d; /^TVDenoise = /d' docs/Project.toml
           julia --project=docs -e '
             import Pkg
-            Pkg.develop(path="ProxTV.jl")
-            Pkg.develop(path="TVDenoise.jl")
+            Pkg.develop([
+              Pkg.PackageSpec(path="ProxTV.jl"),
+              Pkg.PackageSpec(path="TVDenoise.jl"),
+            ])
             Pkg.instantiate()
+            Pkg.status()
           '
 
       - name: Smoke test docs dependencies
