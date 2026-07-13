@@ -50,10 +50,11 @@ jobs:
 
       - name: Instantiate docs environment
         run: |
-          sed -i '/^ProxTV = /d; /^TVDenoise = /d' docs/Project.toml
+          sed -i '/^ProxTV = /d; /^TVDenoise = /d; /^TVDenoising = /d' docs/Project.toml
           julia --project=docs -e '
             import Pkg
             Pkg.develop([
+              Pkg.PackageSpec(path="."),
               Pkg.PackageSpec(path="ProxTV.jl"),
               Pkg.PackageSpec(path="TVDenoise.jl"),
             ])
@@ -67,6 +68,7 @@ jobs:
             using LinearAlgebra
             using ProxTV
             using TVDenoise
+            using TVDenoising
             y = randn(16)
             h = NormTVp(0.1, 1.0, length(y))
             xp = similar(y, Float64)
