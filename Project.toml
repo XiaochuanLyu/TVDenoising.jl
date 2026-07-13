@@ -1,3 +1,8 @@
+name = "TVDenoising"
+uuid = "2c8b5220-c2d9-43f0-a664-61224e2045b1"
+version = "0.0.1"
+authors = ["XiaochuanLyu <>"]
+
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"

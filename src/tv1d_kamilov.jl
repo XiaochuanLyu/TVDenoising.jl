@@ -257,7 +257,7 @@ function tv1d_kamilov_denoise!(x::AbstractVector, y::AbstractVector, λ::Real,
     length(x) == length(y) || throw(ArgumentError("length(x) must match length(y)."))
     λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
     W_kamilov_1d!(a, d, y)
-    shrink_weighted_l1_1d!(d, 2λ)
+    shrink_weighted_l1_1d!(d, 2*λ)#sqrt(2)*λ = 0.7139299169902438; 2*λ = 0.7139299169902438
     WT_kamilov_1d!(x, a, d)
     return x
 end
