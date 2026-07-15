@@ -39,6 +39,6 @@ makedocs(
 )
 
 deploydocs(
-    repo="github.com/XiaochuanLyu/TV_Denoising.git",
+    repo="github.com/XiaochuanLyu/TVDenoising.jl.git",
     devbranch="main",
 )

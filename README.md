@@ -1,1 +1,1 @@
-# TV_Denoising
+# TVDenoising.jl

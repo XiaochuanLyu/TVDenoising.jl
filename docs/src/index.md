@@ -29,7 +29,7 @@ The 1D example compares Condat, ProxTV.jl, TVDenoise.jl, and the current Kamilov
 
 ```julia
 deploydocs(
-    repo="github.com/XiaochuanLyu/TV_Denoising.git",
+    repo="github.com/XiaochuanLyu/TVDenoising.jl.git",
     devbranch="main",
 )
 ```

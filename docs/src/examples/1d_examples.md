@@ -21,18 +21,18 @@ using Plots
 using ProxTV
 using Random
 using TVDenoise
+using TVDenoising
 
-repo = dirname(dirname(dirname(@__DIR__)))
+repo = dirname(dirname(dirname(@__DIR__)));
+````
 
 include(joinpath(repo, "src", "tv1d_condat_v1.jl"))
 include(joinpath(repo, "src", "tv1d_condat_v2.jl"))
 include(joinpath(repo, "src", "tv1d_kamilov.jl"))
 
-mkpath(joinpath(repo, "docs", "src", "assets"))
-````
-
-````
-"/Users/harrylyu/Library/Mobile Documents/com~apple~CloudDocs/文件/Research/2026-Fessler, Jeffrey/Total Variation Denoising/TV_Denoising/docs/src/assets"
+````julia
+asset_dir = joinpath(repo, "docs", "src", "assets");
+mkpath(asset_dir);
 ````
 
 ## Helper functions
@@ -147,11 +147,7 @@ plot!(p_error, x_kamilov .- x_condat_v1; label="Kamilov one-pass - Condat", colo
 
 p = plot(p_signal, p_error; layout=(2, 1), size=(980, 760), left_margin=6Plots.mm)
 
-savefig(p, joinpath(repo, "docs", "src", "assets", "lit_1d_comparison.png"))
-````
-
-````
-"/Users/harrylyu/Library/Mobile Documents/com~apple~CloudDocs/文件/Research/2026-Fessler, Jeffrey/Total Variation Denoising/TV_Denoising/docs/src/assets/lit_1d_comparison.png"
+savefig(p, joinpath(asset_dir, "lit_1d_comparison.png"));
 ````
 
 ![1D comparison](../assets/lit_1d_comparison.png)

@@ -10,11 +10,12 @@ using LinearAlgebra
 using Plots
 using Random
 
-repo = dirname(dirname(dirname(@__DIR__)))
+repo = dirname(dirname(dirname(@__DIR__)));
 
 include(joinpath(repo, "src", "2D_denoising.jl"))
 
-mkpath(joinpath(repo, "docs", "src", "assets"))
+asset_dir = joinpath(repo, "docs", "src", "assets");
+mkpath(asset_dir);
 
 # ## Synthetic image
 
@@ -53,6 +54,6 @@ p2 = heatmap(y; title="noisy", aspect_ratio=:equal, colorbar=false, clims=clims)
 p3 = heatmap(x; title="Kamilov one-pass", aspect_ratio=:equal, colorbar=false, clims=clims)
 p = plot(p1, p2, p3; layout=(1, 3), size=(900, 300))
 
-savefig(p, joinpath(repo, "docs", "src", "assets", "lit_2d_kamilov.png"))
+savefig(p, joinpath(asset_dir, "lit_2d_kamilov.png"));
 
 # ![2D Kamilov](../assets/lit_2d_kamilov.png)
