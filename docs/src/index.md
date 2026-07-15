@@ -1,49 +1,39 @@
-# TV Denoising
+# TVDenoising.jl
 
-This documentation is generated from Julia scripts in `docs/lit/examples`.
+`TVDenoising.jl` is a research codebase for studying total variation (TV)
+denoising algorithms in Julia. The current focus is to compare exact 1D TV
+solvers with transform-domain Kamilov-style methods, and to keep the
+experiments reproducible through notebooks and Literate/Documenter examples.
 
-The examples are intentionally plain Julia plus Markdown comments, so they can be:
+## What This Project Does
 
-- run as normal Julia scripts while debugging;
-- converted to documentation pages with Literate.jl;
-- built into a static site with Documenter.jl.
+The repository currently includes:
 
-## Build locally
+- exact 1D TV denoising with Condat direct solvers;
+- reference comparisons against ProxTV.jl and TVDenoise.jl;
+- weighted 1D Kamilov transform-shrink iterations, written as ISTA and FISTA;
+- a one-pass 1D Kamilov experiment that does not match exact non-circular TV;
+- compact 2D TV denoising experiments using one-pass, ISTA, and FISTA transform-shrink pipelines.
 
-From the repository root:
+The 1D examples use Condat as the main exact reference. The Kamilov one-pass
+method is kept as a diagnostic because it helped identify that the algorithm in
+Kamilov's anisotropic TV paper should not be treated as an exact direct solver
+for this 1D TV problem. The iterative form is therefore labeled as ISTA, with a
+FISTA variant added for accelerated comparison.
 
-```julia
-import Pkg
-Pkg.activate("docs")
-Pkg.instantiate()
-include("docs/make.jl")
-```
+## Current Results
 
-The generated site will be written to `docs/build`.
+The 1D example shows that Condat, ProxTV.jl, and TVDenoise.jl agree up to small
+numerical tolerance. It also compares Kamilov one-pass, ISTA, and FISTA against
+that exact reference, including timing and memory measurements for the iterative
+methods.
 
-The 1D example compares Condat, ProxTV.jl, TVDenoise.jl, and the current Kamilov 1D method. TVDenoise.jl is used as a local path dependency in the docs environment during local development.
-
-## GitHub Pages
-
-`docs/make.jl` includes a `deploydocs` call for:
-
-```julia
-deploydocs(
-    repo="github.com/XiaochuanLyu/TVDenoising.jl.git",
-    devbranch="main",
-)
-```
-
-The GitHub Actions workflow in `.github/workflows/Documentation.yml` does this by:
-
-1. checking out this repository;
-2. checking out `nikopj/TVDenoise.jl` into `TVDenoise.jl`;
-3. running `Pkg.develop(path="TVDenoise.jl")` in the docs environment;
-4. building the Literate examples and deploying the Documenter site.
-
-On pushes to `main`, Documenter deploys the generated HTML to the `gh-pages` branch. On pull requests, it builds the docs but does not publish them.
+The 2D example compares one-pass, ISTA, and FISTA versions of the current
+transform-shrink pipeline on a synthetic image. These methods are useful for
+checking implementation and visual behavior, but they are not presented as final
+exact 2D TV solvers.
 
 ## Examples
 
 - [1D TV denoising](examples/1d_examples.md)
-- [2D Kamilov denoising](examples/2d_examples.md)
+- [2D TV denoising](examples/2d_examples.md)

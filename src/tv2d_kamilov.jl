@@ -277,7 +277,7 @@ function shrink_l2_2d!(dv::AbstractMatrix, dh::AbstractMatrix, τ::Real)
 end
 
 """
-    tv2d_kamilov_denoise!(x, y, λ, av, dv, ah, dh)
+    tv2d_kamilov_onepass!(x, y, λ, av, dv, ah, dh)
 
 Denoise a 2D image with one Kamilov transform-shrink-synthesis pass.
 
@@ -300,7 +300,7 @@ Arguments:
 Returns:
 - `x`: denoised image matrix
 """
-function tv2d_kamilov_denoise!(x::AbstractMatrix, y::AbstractMatrix, λ::Real,
+function tv2d_kamilov_onepass!(x::AbstractMatrix, y::AbstractMatrix, λ::Real,
                                av::AbstractMatrix, dv::AbstractMatrix,
                                ah::AbstractMatrix, dh::AbstractMatrix)
     axes(x) == axes(y) || throw(ArgumentError("axes(x) must match axes(y)."))
@@ -314,7 +314,7 @@ function tv2d_kamilov_denoise!(x::AbstractMatrix, y::AbstractMatrix, λ::Real,
 end
 
 """
-    tv2d_kamilov_denoise!(x, y, λ)
+    tv2d_kamilov_onepass!(x, y, λ)
 
 Denoise a 2D image with internally allocated Kamilov workspace.
 
@@ -322,7 +322,7 @@ Important:
 - This function reads `y` but does not modify it.
 - This function overwrites `x`.
 - This function allocates four coefficient workspace matrices.
-- Use `tv2d_kamilov_denoise!(x, y, λ, av, dv, ah, dh)` to avoid repeated allocations.
+- Use `tv2d_kamilov_onepass!(x, y, λ, av, dv, ah, dh)` to avoid repeated allocations.
 
 Arguments:
 - `x`: output matrix for denoised image
@@ -332,17 +332,17 @@ Arguments:
 Returns:
 - `x`: denoised image matrix
 """
-function tv2d_kamilov_denoise!(x::AbstractMatrix{Tx}, y::AbstractMatrix{Ty}, λ::Real) where {Tx, Ty}
+function tv2d_kamilov_onepass!(x::AbstractMatrix{Tx}, y::AbstractMatrix{Ty}, λ::Real) where {Tx, Ty}
     T = promote_type(Tx, Ty, typeof(λ), Float64)
     av = similar(y, T)
     dv = similar(y, T)
     ah = similar(y, T)
     dh = similar(y, T)
-    return tv2d_kamilov_denoise!(x, y, λ, av, dv, ah, dh)
+    return tv2d_kamilov_onepass!(x, y, λ, av, dv, ah, dh)
 end
 
 """
-    tv2d_kamilov_denoise(y, λ)
+    tv2d_kamilov_onepass(y, λ)
 
 Denoise a 2D image and return a newly allocated output matrix.
 
@@ -358,7 +358,252 @@ Arguments:
 Returns:
 - `x`: denoised image matrix
 """
-function tv2d_kamilov_denoise(y::AbstractMatrix, λ::Real)
+function tv2d_kamilov_onepass(y::AbstractMatrix, λ::Real)
     x = similar(y, promote_type(eltype(y), typeof(λ), Float64))
-    return tv2d_kamilov_denoise!(x, y, λ)
+    return tv2d_kamilov_onepass!(x, y, λ)
 end
+
+"""
+    tv2d_kamilov_ista!(x, y, λ, av, dv, ah, dh, z, xprev; γ=0.01, maxiter=1000)
+
+Run weighted 2D Kamilov ISTA.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x`, `av`, `dv`, `ah`, `dh`, `z`, and `xprev`.
+- This applies the 2D transform-shrink step inside a proximal-gradient iteration.
+- This is an iterative transform-domain TV experiment, not an exact standard 2D TV solver.
+
+Arguments:
+- `x`: output matrix for the current denoised iterate
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `av`: workspace matrix for vertical average coefficients
+- `dv`: workspace matrix for vertical detail coefficients
+- `ah`: workspace matrix for horizontal average coefficients
+- `dh`: workspace matrix for horizontal detail coefficients
+- `z`: workspace matrix for the gradient step input
+- `xprev`: workspace matrix for the previous iterate
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of ISTA iterations
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_ista!(x::AbstractMatrix, y::AbstractMatrix, λ::Real,
+                            av::AbstractMatrix, dv::AbstractMatrix,
+                            ah::AbstractMatrix, dh::AbstractMatrix,
+                            z::AbstractMatrix, xprev::AbstractMatrix;
+                            γ::Real=0.01, maxiter::Integer=1000)
+    axes(x) == axes(y) || throw(ArgumentError("axes(x) must match axes(y)."))
+    axes(z) == axes(y) || throw(ArgumentError("axes(z) must match axes(y)."))
+    axes(xprev) == axes(y) || throw(ArgumentError("axes(xprev) must match axes(y)."))
+    λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
+    γ > 0 || throw(ArgumentError("γ must be positive."))
+    maxiter >= 1 || throw(ArgumentError("maxiter must be positive."))
+
+    D = 2
+    threshold = 2 * γ * λ * sqrt(D)
+    copyto!(x, y)
+
+    for _ in 1:maxiter
+        copyto!(xprev, x)
+        @inbounds for idx in eachindex(y)
+            z[idx] = xprev[idx] - γ * (xprev[idx] - y[idx])
+        end
+
+        W_kamilov_2d!(av, dv, ah, dh, z)
+        shrink_l2_2d!(dv, dh, threshold)
+        WT_kamilov_2d!(x, av, dv, ah, dh)
+    end
+    return x
+end
+
+"""
+    tv2d_kamilov_ista!(x, y, λ; γ=0.01, maxiter=1000)
+
+Run weighted 2D Kamilov ISTA with internally allocated workspace.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x`.
+- This function allocates temporary workspace matrices.
+- Use the full workspace form for benchmarks.
+
+Arguments:
+- `x`: output matrix for the final denoised image iterate
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of ISTA iterations
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_ista!(x::AbstractMatrix{Tx}, y::AbstractMatrix{Ty}, λ::Real;
+                            γ::Real=0.01, maxiter::Integer=1000) where {Tx, Ty}
+    T = promote_type(Tx, Ty, typeof(λ), typeof(γ), Float64)
+    av = similar(y, T)
+    dv = similar(y, T)
+    ah = similar(y, T)
+    dh = similar(y, T)
+    z = similar(y, T)
+    xprev = similar(y, T)
+    return tv2d_kamilov_ista!(x, y, λ, av, dv, ah, dh, z, xprev; γ=γ, maxiter=maxiter)
+end
+
+"""
+    tv2d_kamilov_ista(y, λ; γ=0.01, maxiter=1000)
+
+Denoise a 2D image with weighted Kamilov ISTA and return a new matrix.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function allocates the output matrix and all workspace matrices.
+
+Arguments:
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of ISTA iterations
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_ista(y::AbstractMatrix, λ::Real;
+                           γ::Real=0.01, maxiter::Integer=1000)
+    x = similar(y, promote_type(eltype(y), typeof(λ), typeof(γ), Float64))
+    return tv2d_kamilov_ista!(x, y, λ; γ=γ, maxiter=maxiter)
+end
+
+"""
+    tv2d_kamilov_fista!(x, y, λ, av, dv, ah, dh, z, xprev, q, qprev; γ=0.01, maxiter=1000)
+
+Run weighted 2D Kamilov FISTA.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x`, `av`, `dv`, `ah`, `dh`, `z`, `xprev`, `q`, and `qprev`.
+- This adds standard FISTA momentum to the 2D Kamilov ISTA iteration.
+- This is an iterative transform-domain TV experiment, not an exact standard 2D TV solver.
+
+Arguments:
+- `x`: output matrix for the current denoised iterate
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `av`: workspace matrix for vertical average coefficients
+- `dv`: workspace matrix for vertical detail coefficients
+- `ah`: workspace matrix for horizontal average coefficients
+- `dh`: workspace matrix for horizontal detail coefficients
+- `z`: workspace matrix for the gradient step input
+- `xprev`: workspace matrix for the previous denoised iterate
+- `q`: workspace matrix for the current momentum point
+- `qprev`: workspace matrix for the previous momentum point
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of FISTA iterations
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_fista!(x::AbstractMatrix, y::AbstractMatrix, λ::Real,
+                             av::AbstractMatrix, dv::AbstractMatrix,
+                             ah::AbstractMatrix, dh::AbstractMatrix,
+                             z::AbstractMatrix, xprev::AbstractMatrix,
+                             q::AbstractMatrix, qprev::AbstractMatrix;
+                             γ::Real=0.01, maxiter::Integer=1000)
+    axes(x) == axes(y) || throw(ArgumentError("axes(x) must match axes(y)."))
+    axes(z) == axes(y) || throw(ArgumentError("axes(z) must match axes(y)."))
+    axes(xprev) == axes(y) || throw(ArgumentError("axes(xprev) must match axes(y)."))
+    axes(q) == axes(y) || throw(ArgumentError("axes(q) must match axes(y)."))
+    axes(qprev) == axes(y) || throw(ArgumentError("axes(qprev) must match axes(y)."))
+    λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
+    γ > 0 || throw(ArgumentError("γ must be positive."))
+    maxiter >= 1 || throw(ArgumentError("maxiter must be positive."))
+
+    D = 2
+    threshold = 2 * γ * λ * sqrt(D)
+    copyto!(x, y)
+    copyto!(q, y)
+    t = one(float(γ))
+
+    for _ in 1:maxiter
+        copyto!(xprev, x)
+        copyto!(qprev, q)
+
+        @inbounds for idx in eachindex(y)
+            z[idx] = qprev[idx] - γ * (qprev[idx] - y[idx])
+        end
+
+        W_kamilov_2d!(av, dv, ah, dh, z)
+        shrink_l2_2d!(dv, dh, threshold)
+        WT_kamilov_2d!(x, av, dv, ah, dh)
+
+        tnext = (1 + sqrt(1 + 4 * t^2)) / 2
+        momentum = (t - 1) / tnext
+        @inbounds for idx in eachindex(y)
+            q[idx] = x[idx] + momentum * (x[idx] - xprev[idx])
+        end
+        t = tnext
+    end
+    return x
+end
+
+"""
+    tv2d_kamilov_fista!(x, y, λ; γ=0.01, maxiter=1000)
+
+Run weighted 2D Kamilov FISTA with internally allocated workspace.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x`.
+- This function allocates temporary workspace matrices.
+- Use the full workspace form for benchmarks.
+
+Arguments:
+- `x`: output matrix for the final denoised image iterate
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of FISTA iterations
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_fista!(x::AbstractMatrix{Tx}, y::AbstractMatrix{Ty}, λ::Real;
+                             γ::Real=0.01, maxiter::Integer=1000) where {Tx, Ty}
+    T = promote_type(Tx, Ty, typeof(λ), typeof(γ), Float64)
+    av = similar(y, T)
+    dv = similar(y, T)
+    ah = similar(y, T)
+    dh = similar(y, T)
+    z = similar(y, T)
+    xprev = similar(y, T)
+    q = similar(y, T)
+    qprev = similar(y, T)
+    return tv2d_kamilov_fista!(x, y, λ, av, dv, ah, dh, z, xprev, q, qprev; γ=γ, maxiter=maxiter)
+end
+
+"""
+    tv2d_kamilov_fista(y, λ; γ=0.01, maxiter=1000)
+
+Denoise a 2D image with weighted Kamilov FISTA and return a new matrix.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function allocates the output matrix and all workspace matrices.
+
+Arguments:
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of FISTA iterations
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_fista(y::AbstractMatrix, λ::Real;
+                            γ::Real=0.01, maxiter::Integer=1000)
+    x = similar(y, promote_type(eltype(y), typeof(λ), typeof(γ), Float64))
+    return tv2d_kamilov_fista!(x, y, λ; γ=γ, maxiter=maxiter)
+end
+

@@ -33,7 +33,7 @@ makedocs(
         "Home" => "index.md",
         "Examples" => [
             "1D TV denoising" => "examples/1d_examples.md",
-            "2D Kamilov denoising" => "examples/2d_examples.md",
+            "2D TV denoising" => "examples/2d_examples.md",
         ],
     ],
 )

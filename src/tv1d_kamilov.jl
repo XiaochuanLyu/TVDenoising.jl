@@ -118,16 +118,16 @@ function shrink_weighted_l1_1d!(d::AbstractVector, τ::Real)
 end
 
 """
-    tv1d_kamilov_fppa!(x, y, λ, a, d, z, xprev; γ=0.01, maxiter=10000, tol=1e-8)
+    tv1d_kamilov_ista!(x, y, λ, a, d, z, xprev; γ=0.01, maxiter=10000)
 
-Run the weighted 1D Kamilov fast parallel proximal iteration.
+Run weighted 1D Kamilov ISTA.
 
 Important:
 - This function reads `y` but does not modify it.
 - This function overwrites `x`, `a`, `d`, `z`, and `xprev`.
 - This uses the weighted 1-norm regularizer with wrap-around weight 0.
-- Smaller `γ` usually gives a closer match to exact Condat TV, but needs more iterations.
-- This is an iterative approximation to the Condat solution, not Condat's direct scan algorithm.
+- This implements the fixed-point iteration from Kamilov's equations (18a)-(18b).
+- This is ISTA/proximal-gradient, not Condat's direct scan algorithm.
 
 Arguments:
 - `x`: output vector for the current denoised signal iterate
@@ -138,12 +138,12 @@ Arguments:
 - `z`: workspace vector for the gradient step input
 - `xprev`: workspace vector for the previous iterate
 - `γ`: positive gradient/proximal step size
-- `maxiter`: maximum number of FPPA iterations
+- `maxiter`: maximum number of ISTA iterations
 
 Returns:
 - `x`: final denoised signal iterate
 """
-function tv1d_kamilov_fppa!(x::AbstractVector, y::AbstractVector, λ::Real,
+function tv1d_kamilov_ista!(x::AbstractVector, y::AbstractVector, λ::Real,
                             a::AbstractVector, d::AbstractVector,
                             z::AbstractVector, xprev::AbstractVector;
                             γ::Real=0.01, maxiter::Integer=10000)
@@ -168,15 +168,14 @@ function tv1d_kamilov_fppa!(x::AbstractVector, y::AbstractVector, λ::Real,
         W_kamilov_1d!(a, d, z)
         shrink_weighted_l1_1d!(d, threshold)
         WT_kamilov_1d!(x, a, d)
-
     end
     return x
 end
 
 """
-    tv1d_kamilov_fppa!(x, y, λ; γ=0.01, maxiter=10000)
+    tv1d_kamilov_ista!(x, y, λ; γ=0.01, maxiter=10000)
 
-Run the weighted 1D Kamilov FPPA with internally allocated workspace.
+Run weighted 1D Kamilov ISTA with internally allocated workspace.
 
 Important:
 - This function reads `y` but does not modify it.
@@ -189,25 +188,25 @@ Arguments:
 - `y`: noisy input signal vector
 - `λ`: nonnegative TV regularization strength
 - `γ`: positive gradient/proximal step size
-- `maxiter`: maximum number of FPPA iterations
+- `maxiter`: maximum number of ISTA iterations
 
 Returns:
 - `x`: final denoised signal iterate
 """
-function tv1d_kamilov_fppa!(x::AbstractVector{Tx}, y::AbstractVector{Ty}, λ::Real;
+function tv1d_kamilov_ista!(x::AbstractVector{Tx}, y::AbstractVector{Ty}, λ::Real;
                             γ::Real=0.01, maxiter::Integer=10000) where {Tx, Ty}
     T = promote_type(Tx, Ty, typeof(λ), typeof(γ), Float64)
     a = similar(y, T)
     d = similar(y, T)
     z = similar(y, T)
     xprev = similar(y, T)
-    return tv1d_kamilov_fppa!(x, y, λ, a, d, z, xprev; γ=γ, maxiter=maxiter)
+    return tv1d_kamilov_ista!(x, y, λ, a, d, z, xprev; γ=γ, maxiter=maxiter)
 end
 
 """
-    tv1d_kamilov_fppa(y, λ; γ=0.01, maxiter=10000)
+    tv1d_kamilov_ista(y, λ; γ=0.01, maxiter=10000)
 
-Denoise a 1D signal with weighted Kamilov FPPA and return a new vector.
+Denoise a 1D signal with weighted Kamilov ISTA and return a new vector.
 
 Important:
 - This function reads `y` but does not modify it.
@@ -218,19 +217,148 @@ Arguments:
 - `y`: noisy input signal vector
 - `λ`: nonnegative TV regularization strength
 - `γ`: positive gradient/proximal step size
-- `maxiter`: maximum number of FPPA iterations
+- `maxiter`: maximum number of ISTA iterations
 
 Returns:
 - `x`: final denoised signal iterate
 """
-function tv1d_kamilov_fppa(y::AbstractVector, λ::Real;
+function tv1d_kamilov_ista(y::AbstractVector, λ::Real;
                            γ::Real=0.01, maxiter::Integer=10000)
     x = similar(y, promote_type(eltype(y), typeof(λ), typeof(γ), Float64))
-    return tv1d_kamilov_fppa!(x, y, λ; γ=γ, maxiter=maxiter)
+    return tv1d_kamilov_ista!(x, y, λ; γ=γ, maxiter=maxiter)
 end
 
 """
-    tv1d_kamilov_denoise!(x, y, λ, a, d)
+    tv1d_kamilov_fista!(x, y, λ, a, d, z, xprev, q, qprev; γ=0.01, maxiter=10000)
+
+Run weighted 1D Kamilov FISTA.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x`, `a`, `d`, `z`, `xprev`, `q`, and `qprev`.
+- This accelerates the ISTA fixed-point iteration with standard FISTA momentum.
+- This is still an iterative approximation, not Condat's direct scan algorithm.
+
+Arguments:
+- `x`: output vector for the current denoised signal iterate
+- `y`: noisy input signal vector
+- `λ`: nonnegative TV regularization strength
+- `a`: workspace vector for average coefficients
+- `d`: workspace vector for detail coefficients
+- `z`: workspace vector for the gradient step input
+- `xprev`: workspace vector for the previous denoised iterate
+- `q`: workspace vector for the current momentum point
+- `qprev`: workspace vector for the previous momentum point
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of FISTA iterations
+
+Returns:
+- `x`: final denoised signal iterate
+"""
+function tv1d_kamilov_fista!(x::AbstractVector, y::AbstractVector, λ::Real,
+                             a::AbstractVector, d::AbstractVector,
+                             z::AbstractVector, xprev::AbstractVector,
+                             q::AbstractVector, qprev::AbstractVector;
+                             γ::Real=0.01, maxiter::Integer=10000)
+    length(x) == length(y) || throw(ArgumentError("length(x) must match length(y)."))
+    length(a) == length(y) || throw(ArgumentError("length(a) must match length(y)."))
+    length(d) == length(y) || throw(ArgumentError("length(d) must match length(y)."))
+    length(z) == length(y) || throw(ArgumentError("length(z) must match length(y)."))
+    length(xprev) == length(y) || throw(ArgumentError("length(xprev) must match length(y)."))
+    length(q) == length(y) || throw(ArgumentError("length(q) must match length(y)."))
+    length(qprev) == length(y) || throw(ArgumentError("length(qprev) must match length(y)."))
+    λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
+    γ > 0 || throw(ArgumentError("γ must be positive."))
+    maxiter >= 1 || throw(ArgumentError("maxiter must be positive."))
+
+    copyto!(x, y)
+    copyto!(q, y)
+    threshold = 2 * γ * λ
+    t = one(float(γ))
+
+    for _ in 1:maxiter
+        copyto!(xprev, x)
+        copyto!(qprev, q)
+
+        @inbounds for i in eachindex(y)
+            z[i] = qprev[i] - γ * (qprev[i] - y[i])
+        end
+
+        W_kamilov_1d!(a, d, z)
+        shrink_weighted_l1_1d!(d, threshold)
+        WT_kamilov_1d!(x, a, d)
+
+        tnext = (1 + sqrt(1 + 4 * t^2)) / 2
+        momentum = (t - 1) / tnext
+        @inbounds for i in eachindex(y)
+            q[i] = x[i] + momentum * (x[i] - xprev[i])
+        end
+        t = tnext
+    end
+    return x
+end
+
+"""
+    tv1d_kamilov_fista!(x, y, λ; γ=0.01, maxiter=10000)
+
+Run weighted 1D Kamilov FISTA with internally allocated workspace.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x`.
+- This function allocates temporary workspace vectors.
+- Use the full workspace form for benchmarks.
+
+Arguments:
+- `x`: output vector for the final denoised signal iterate
+- `y`: noisy input signal vector
+- `λ`: nonnegative TV regularization strength
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of FISTA iterations
+
+Returns:
+- `x`: final denoised signal iterate
+"""
+function tv1d_kamilov_fista!(x::AbstractVector{Tx}, y::AbstractVector{Ty}, λ::Real;
+                             γ::Real=0.01, maxiter::Integer=10000) where {Tx, Ty}
+    T = promote_type(Tx, Ty, typeof(λ), typeof(γ), Float64)
+    a = similar(y, T)
+    d = similar(y, T)
+    z = similar(y, T)
+    xprev = similar(y, T)
+    q = similar(y, T)
+    qprev = similar(y, T)
+    return tv1d_kamilov_fista!(x, y, λ, a, d, z, xprev, q, qprev; γ=γ, maxiter=maxiter)
+end
+
+"""
+    tv1d_kamilov_fista(y, λ; γ=0.01, maxiter=10000)
+
+Denoise a 1D signal with weighted Kamilov FISTA and return a new vector.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function allocates the output vector and all workspace vectors.
+- FISTA usually reaches the ISTA fixed point in fewer iterations for the same `γ`.
+
+Arguments:
+- `y`: noisy input signal vector
+- `λ`: nonnegative TV regularization strength
+- `γ`: positive gradient/proximal step size
+- `maxiter`: maximum number of FISTA iterations
+
+Returns:
+- `x`: final denoised signal iterate
+"""
+function tv1d_kamilov_fista(y::AbstractVector, λ::Real;
+                            γ::Real=0.01, maxiter::Integer=10000)
+    x = similar(y, promote_type(eltype(y), typeof(λ), typeof(γ), Float64))
+    return tv1d_kamilov_fista!(x, y, λ; γ=γ, maxiter=maxiter)
+end
+
+
+"""
+    tv1d_kamilov_onepass!(x, y, λ, a, d)
 
 Denoise a 1D signal with one Kamilov transform-shrink-synthesis pass.
 
@@ -252,7 +380,7 @@ Arguments:
 Returns:
 - `x`: denoised signal vector
 """
-function tv1d_kamilov_denoise!(x::AbstractVector, y::AbstractVector, λ::Real,
+function tv1d_kamilov_onepass!(x::AbstractVector, y::AbstractVector, λ::Real,
                                a::AbstractVector, d::AbstractVector)
     length(x) == length(y) || throw(ArgumentError("length(x) must match length(y)."))
     λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
@@ -263,7 +391,7 @@ function tv1d_kamilov_denoise!(x::AbstractVector, y::AbstractVector, λ::Real,
 end
 
 """
-    tv1d_kamilov_denoise!(x, y, λ)
+    tv1d_kamilov_onepass!(x, y, λ)
 
 Denoise a 1D signal with internally allocated Kamilov workspace.
 
@@ -271,7 +399,7 @@ Important:
 - This function reads `y` but does not modify it.
 - This function overwrites `x`.
 - This function allocates temporary `a` and `d` work vectors.
-- Use `tv1d_kamilov_denoise!(x, y, λ, a, d)` to avoid repeated allocations.
+- Use `tv1d_kamilov_onepass!(x, y, λ, a, d)` to avoid repeated allocations.
 
 Arguments:
 - `x`: output vector for denoised signal
@@ -281,15 +409,15 @@ Arguments:
 Returns:
 - `x`: denoised signal vector
 """
-function tv1d_kamilov_denoise!(x::AbstractVector{Tx}, y::AbstractVector{Ty}, λ::Real) where {Tx, Ty}
+function tv1d_kamilov_onepass!(x::AbstractVector{Tx}, y::AbstractVector{Ty}, λ::Real) where {Tx, Ty}
     T = promote_type(Tx, Ty, typeof(λ), Float64)
     a = similar(y, T)
     d = similar(y, T)
-    return tv1d_kamilov_denoise!(x, y, λ, a, d)
+    return tv1d_kamilov_onepass!(x, y, λ, a, d)
 end
 
 """
-    tv1d_kamilov_denoise(y, λ)
+    tv1d_kamilov_onepass(y, λ)
 
 Denoise a 1D signal and return a newly allocated output vector.
 
@@ -305,7 +433,7 @@ Arguments:
 Returns:
 - `x`: denoised signal vector
 """
-function tv1d_kamilov_denoise(y::AbstractVector, λ::Real)
+function tv1d_kamilov_onepass(y::AbstractVector, λ::Real)
     x = similar(y, promote_type(eltype(y), typeof(λ), Float64))
-    return tv1d_kamilov_denoise!(x, y, λ)
+    return tv1d_kamilov_onepass!(x, y, λ)
 end
