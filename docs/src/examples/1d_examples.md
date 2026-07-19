@@ -11,7 +11,8 @@ This example compares the current 1D methods:
 - ProxTV.jl reference solver;
 - TVDenoise.jl sparse ADMM solver;
 - weighted Kamilov one-pass shrinkage;
-- weighted Kamilov ISTA and FISTA diagnostics.
+- weighted Kamilov ISTA/FISTA diagnostics;
+- MIRT POGM with gradient restart.
 
 The Kamilov one-pass method is included as an experiment. It currently does
 not match Condat exactly. Kamilov's equations (18a)-(18b) are shown here as
@@ -27,6 +28,13 @@ using TVDenoise
 using TVDenoising
 
 
+
+````
+
+````
+Precompiling packages...
+   4481.8 ms  ✓ TVDenoising
+  1 dependency successfully precompiled in 5 seconds. 157 already precompiled.
 
 ````
 
@@ -70,12 +78,15 @@ a = similar(y)
 d = similar(y)
 γ_ista = 0.0000317
 γ_fista = 0.00001
+pogm_L = 100000.0
+pogm_maxiter = 10_000
 
 tv1d_condat_v1!(x_condat_v1, y, λ)
 tv1d_condat_v2!(x_condat_v2, y, λ)
 tv1d_kamilov_onepass!(x_kamilov, y, λ, a, d)
 x_ista = tv1d_kamilov_ista(y, λ; γ=γ_ista, maxiter=200000)
 x_fista = tv1d_kamilov_fista(y, λ; γ=γ_fista, maxiter=20000)
+x_pogm = tv1d_kamilov_pogm(y, λ; L=pogm_L, maxiter=pogm_maxiter)
 x_proxtv = proxtv_1d(y, λ)
 ρ_tvd = 5.0
 x_tvd, hist_tvd = tvd(y, λ, ρ_tvd; maxit=10000, tol=1e-8, verbose=false)
@@ -87,6 +98,7 @@ results = [
     ("Kamilov one-pass", norm(x_kamilov - x_condat_v1, Inf), rmse(x_kamilov, xtrue), tv1_value(x_kamilov)),
     ("Kamilov ISTA", norm(x_ista - x_condat_v1, Inf), rmse(x_ista, xtrue), tv1_value(x_ista)),
     ("Kamilov FISTA", norm(x_fista - x_condat_v1, Inf), rmse(x_fista, xtrue), tv1_value(x_fista)),
+    ("MIRT POGM", norm(x_pogm - x_condat_v1, Inf), rmse(x_pogm, xtrue), tv1_value(x_pogm)),
 ]
 
 for (name, err, r, tv) in results
@@ -95,6 +107,7 @@ end
 println("TVDenoise.jl tvd iterations = ", hist_tvd.k, ", ρ = ", ρ_tvd)
 println("Kamilov ISTA γ = ", γ_ista, ", maxiter = 200000")
 println("Kamilov FISTA γ = ", γ_fista, ", maxiter = 20000")
+println("MIRT POGM L = ", pogm_L, ", maxiter = ", pogm_maxiter)
 ````
 
 ````
@@ -104,9 +117,11 @@ TVDenoise.jl tvd    ||x-Condat||∞ = 1.056153499989776e-6  RMSE = 0.08069500965
 Kamilov one-pass    ||x-Condat||∞ = 0.6936854570208262  RMSE = 0.23522949968725393  TV = 36.24946024789661
 Kamilov ISTA        ||x-Condat||∞ = 0.000673866843181381  RMSE = 0.08073997970659562  TV = 7.058916043299575
 Kamilov FISTA       ||x-Condat||∞ = 0.0006534998034120054  RMSE = 0.08066004208082816  TV = 7.050092352437126
+MIRT POGM           ||x-Condat||∞ = 0.00048513597954380483  RMSE = 0.08069363165100996  TV = 7.052454959534834
 TVDenoise.jl tvd iterations = 191, ρ = 5.0
 Kamilov ISTA γ = 3.17e-5, maxiter = 200000
 Kamilov FISTA γ = 1.0e-5, maxiter = 20000
+MIRT POGM L = 100000.0, maxiter = 10000
 
 ````
 
@@ -133,6 +148,7 @@ z_fista_b = similar(y)
 xprev_fista_b = similar(y)
 q_fista_b = similar(y)
 qprev_fista_b = similar(y)
+x_pogm_b = similar(y)
 
 bench_ista = @benchmark tv1d_kamilov_ista!(
     $x_ista_b, $y, $λ, $a_ista_b, $d_ista_b, $z_ista_b, $xprev_ista_b;
@@ -143,8 +159,12 @@ bench_fista = @benchmark tv1d_kamilov_fista!(
     $q_fista_b, $qprev_fista_b;
     γ=$bench_γ, maxiter=$bench_iters,
 ) seconds=0.2 samples=20 evals=1
+bench_pogm = @benchmark tv1d_kamilov_pogm!(
+    $x_pogm_b, $y, $λ;
+    L=$pogm_L, maxiter=$bench_iters,
+) seconds=0.2 samples=20 evals=1
 
-for (name, b) in (("ISTA", bench_ista), ("FISTA", bench_fista))
+for (name, b) in (("ISTA", bench_ista), ("FISTA", bench_fista), ("POGM", bench_pogm))
     t_ms = median(b).time / 1e6
     mem = median(b).memory
     allocs = median(b).allocs
@@ -154,8 +174,9 @@ end
 ````
 
 ````
-ISTA      median time = 3.008 ms, memory = 0 bytes, allocations = 0
-FISTA     median time = 3.691 ms, memory = 0 bytes, allocations = 0
+ISTA      median time = 3.216 ms, memory = 0 bytes, allocations = 0
+FISTA     median time = 3.768 ms, memory = 0 bytes, allocations = 0
+POGM      median time = 48.19 ms, memory = 444083312 bytes, allocations = 619663
 
 ````
 
@@ -179,6 +200,7 @@ plot!(p_signal, x_tvd; label="TVDenoise.jl tvd", color=:green, linewidth=2, line
 plot!(p_signal, x_kamilov; label="Kamilov one-pass", color=:red, linewidth=2, linestyle=:dot)
 plot!(p_signal, x_ista; label="Kamilov ISTA", color=:purple, linewidth=2, linestyle=:dash)
 plot!(p_signal, x_fista; label="Kamilov FISTA", color=:magenta, linewidth=2, linestyle=:dashdotdot)
+plot!(p_signal, x_pogm; label="MIRT POGM", color=:brown, linewidth=2, linestyle=:dash)
 
 p_error = plot(
     x_condat_v2 .- x_condat_v1;
@@ -196,6 +218,7 @@ plot!(p_error, x_tvd .- x_condat_v1; label="TVDenoise - Condat", color=:green, l
 plot!(p_error, x_kamilov .- x_condat_v1; label="Kamilov one-pass - Condat", color=:red, linewidth=2, linestyle=:dot)
 plot!(p_error, x_ista .- x_condat_v1; label="Kamilov ISTA - Condat", color=:purple, linewidth=2, linestyle=:dash)
 plot!(p_error, x_fista .- x_condat_v1; label="Kamilov FISTA - Condat", color=:magenta, linewidth=2, linestyle=:dashdotdot)
+plot!(p_error, x_pogm .- x_condat_v1; label="MIRT POGM - Condat", color=:brown, linewidth=2, linestyle=:dash)
 
 p = plot(p_signal, p_error; layout=(2, 1), size=(980, 760), left_margin=6Plots.mm);
 

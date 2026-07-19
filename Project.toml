@@ -5,3 +5,7 @@ authors = ["XiaochuanLyu <>"]
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MIRT = "7035ae7a-3787-11e9-139a-5545ed3dc201"
+
+[compat]
+MIRT = "0.18.3"

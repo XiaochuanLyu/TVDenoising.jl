@@ -1,4 +1,5 @@
 using LinearAlgebra
+using MIRT: pogm_restart
 
 """
     circshift_down(x)
@@ -607,3 +608,104 @@ function tv2d_kamilov_fista(y::AbstractMatrix, λ::Real;
     return tv2d_kamilov_fista!(x, y, λ; γ=γ, maxiter=maxiter)
 end
 
+
+
+"""
+    tv2d_kamilov_pogm!(x, y, λ; maxiter=1000, L=6666.666666666667, restart=:gr, restart_cutoff=0.0)
+
+Denoise a 2D image with MIRT's POGM iterator and gradient restart.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x` with the final POGM iterate.
+- This uses `MIRT.pogm_restart` with `mom=:pogm`.
+- The smooth term is `0.5 * ||x - y||^2`.
+- `L` is passed to MIRT as `f_L`, so the effective step size is `1/L`.
+- The nonsmooth step is the same 2D Kamilov transform-shrink step used by ISTA/FISTA.
+- The default `restart=:gr` matches the gradient-restart mode used in the MRI example.
+- MIRT's iterator is allocating internally; this `!` wrapper only avoids allocating the final output matrix.
+
+Arguments:
+- `x`: output matrix for the final denoised image iterate
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `maxiter`: number of POGM iterations
+- `L`: positive MIRT gradient Lipschitz parameter; effective step size is `1/L`
+- `restart`: MIRT restart option, usually `:gr` or `:none`
+- `restart_cutoff`: restart cutoff passed to `MIRT.pogm_restart`
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_pogm!(x::AbstractMatrix, y::AbstractMatrix, λ::Real;
+                            maxiter::Integer=1000,
+                            L::Real=6666.666666666667,
+                            restart::Symbol=:gr,
+                            restart_cutoff::Real=0.0)
+    axes(x) == axes(y) || throw(ArgumentError("axes(x) must match axes(y)."))
+    λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
+    maxiter >= 1 || throw(ArgumentError("maxiter must be positive."))
+    L > 0 || throw(ArgumentError("L must be positive."))
+    restart in (:gr, :none) || throw(ArgumentError("restart must be :gr or :none for this POGM wrapper."))
+
+    T = promote_type(eltype(x), eltype(y), typeof(λ), Float64)
+    yy = T.(y)
+    x0 = copy(yy)
+    D = 2
+
+    f_grad = v -> v .- yy
+    Fcost = v -> 0.5 * sum(abs2, v .- yy)
+    g_prox = function (z, c::Real)
+        out = similar(z, T)
+        av = similar(z, T)
+        dv = similar(z, T)
+        ah = similar(z, T)
+        dh = similar(z, T)
+        W_kamilov_2d!(av, dv, ah, dh, z)
+        shrink_l2_2d!(dv, dh, 2 * c * λ * sqrt(D))
+        WT_kamilov_2d!(out, av, dv, ah, dh)
+        return out
+    end
+
+    x_pogm, _ = pogm_restart(
+        x0, Fcost, f_grad, T(L);
+        mom=:pogm,
+        restart=restart,
+        restart_cutoff=restart_cutoff,
+        niter=Int(maxiter),
+        g_prox=g_prox,
+    )
+    copyto!(x, x_pogm)
+    return x
+end
+
+"""
+    tv2d_kamilov_pogm(y, λ; maxiter=1000, L=6666.666666666667, restart=:gr, restart_cutoff=0.0)
+
+Denoise a 2D image with MIRT's POGM iterator and return a new matrix.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function allocates the output matrix and MIRT iterator workspace.
+- This is an accelerated diagnostic method for the current Kamilov transform-shrink pipeline.
+
+Arguments:
+- `y`: noisy input image matrix
+- `λ`: nonnegative TV regularization strength
+- `maxiter`: number of POGM iterations
+- `L`: positive MIRT gradient Lipschitz parameter; effective step size is `1/L`
+- `restart`: MIRT restart option, usually `:gr` or `:none`
+- `restart_cutoff`: restart cutoff passed to `MIRT.pogm_restart`
+
+Returns:
+- `x`: final denoised image iterate
+"""
+function tv2d_kamilov_pogm(y::AbstractMatrix, λ::Real;
+                           maxiter::Integer=1000,
+                           L::Real=6666.666666666667,
+                           restart::Symbol=:gr,
+                           restart_cutoff::Real=0.0)
+    x = similar(y, promote_type(eltype(y), typeof(λ), Float64))
+    return tv2d_kamilov_pogm!(x, y, λ; maxiter=maxiter, L=L, restart=restart,
+                              restart_cutoff=restart_cutoff)
+end

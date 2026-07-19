@@ -4,8 +4,10 @@ Noisy RMSE = 0.24872577727892217
 One-pass RMSE = 0.15442213621634499
 Best ISTA gamma = 0.01, RMSE = 0.1328989749838951, maxiter = 1000
 Best FISTA gamma = 0.00015, RMSE = 0.13023307323610872, maxiter = 1000
+MIRT POGM L = 6666.666666666667, RMSE = 0.13289538783382054, maxiter = 1000
 
 Benchmark median time and memory
-(method = "onepass", median_ms = 0.130125, memory_bytes = 0, allocations = 0)
-(method = "ISTA", median_ms = 93.2158545, memory_bytes = 0, allocations = 0)
-(method = "FISTA", median_ms = 80.904313, memory_bytes = 0, allocations = 0)
+(method = "onepass", median_ms = 0.1299375, memory_bytes = 0, allocations = 0)
+(method = "ISTA", median_ms = 93.035625, memory_bytes = 0, allocations = 0)
+(method = "FISTA", median_ms = 82.5221455, memory_bytes = 0, allocations = 0)
+(method = "POGM", median_ms = 374.491646, memory_bytes = 2132510320, allocations = 92014)

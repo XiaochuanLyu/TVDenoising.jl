@@ -1,4 +1,5 @@
 using LinearAlgebra
+using MIRT: pogm_restart
 
 """
     W_kamilov_1d!(a, d, x)
@@ -436,4 +437,102 @@ Returns:
 function tv1d_kamilov_onepass(y::AbstractVector, λ::Real)
     x = similar(y, promote_type(eltype(y), typeof(λ), Float64))
     return tv1d_kamilov_onepass!(x, y, λ)
+end
+
+
+"""
+    tv1d_kamilov_pogm!(x, y, λ; maxiter=10000, L=100000.0, restart=:gr, restart_cutoff=0.0)
+
+Denoise a 1D signal with MIRT's POGM iterator and gradient restart.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function overwrites `x` with the final POGM iterate.
+- This uses `MIRT.pogm_restart` with `mom=:pogm`.
+- The smooth term is `0.5 * ||x - y||^2`.
+- `L` is passed to MIRT as `f_L`, so the effective step size is `1/L`.
+- The nonsmooth step is the same weighted Kamilov transform-shrink step used by ISTA/FISTA.
+- The default `restart=:gr` matches the gradient-restart mode used in the MRI example.
+- MIRT's iterator is allocating internally; this `!` wrapper only avoids allocating the final output vector.
+
+Arguments:
+- `x`: output vector for the final denoised signal iterate
+- `y`: noisy input signal vector
+- `λ`: nonnegative TV regularization strength
+- `maxiter`: number of POGM iterations
+- `L`: positive MIRT gradient Lipschitz parameter; effective step size is `1/L`
+- `restart`: MIRT restart option, usually `:gr` or `:none`
+- `restart_cutoff`: restart cutoff passed to `MIRT.pogm_restart`
+
+Returns:
+- `x`: final denoised signal iterate
+"""
+function tv1d_kamilov_pogm!(x::AbstractVector, y::AbstractVector, λ::Real;
+                            maxiter::Integer=10000,
+                            L::Real=100000.0,
+                            restart::Symbol=:gr,
+                            restart_cutoff::Real=0.0)
+    length(x) == length(y) || throw(ArgumentError("length(x) must match length(y)."))
+    λ >= 0 || throw(ArgumentError("λ must be nonnegative."))
+    maxiter >= 1 || throw(ArgumentError("maxiter must be positive."))
+    L > 0 || throw(ArgumentError("L must be positive."))
+    restart in (:gr, :none) || throw(ArgumentError("restart must be :gr or :none for this POGM wrapper."))
+
+    T = promote_type(eltype(x), eltype(y), typeof(λ), Float64)
+    yy = T.(y)
+    x0 = copy(yy)
+
+    f_grad = v -> v .- yy
+    Fcost = v -> 0.5 * sum(abs2, v .- yy)
+    g_prox = function (z, c::Real)
+        out = similar(z, T)
+        a = similar(z, T)
+        d = similar(z, T)
+        W_kamilov_1d!(a, d, z)
+        shrink_weighted_l1_1d!(d, 2 * c * λ)
+        WT_kamilov_1d!(out, a, d)
+        return out
+    end
+
+    x_pogm, _ = pogm_restart(
+        x0, Fcost, f_grad, T(L);
+        mom=:pogm,
+        restart=restart,
+        restart_cutoff=restart_cutoff,
+        niter=Int(maxiter),
+        g_prox=g_prox,
+    )
+    copyto!(x, x_pogm)
+    return x
+end
+
+"""
+    tv1d_kamilov_pogm(y, λ; maxiter=10000, L=100000.0, restart=:gr, restart_cutoff=0.0)
+
+Denoise a 1D signal with MIRT's POGM iterator and return a new vector.
+
+Important:
+- This function reads `y` but does not modify it.
+- This function allocates the output vector and MIRT iterator workspace.
+- This is an accelerated diagnostic method for the current Kamilov transform-shrink pipeline.
+
+Arguments:
+- `y`: noisy input signal vector
+- `λ`: nonnegative TV regularization strength
+- `maxiter`: number of POGM iterations
+- `L`: positive MIRT gradient Lipschitz parameter; effective step size is `1/L`
+- `restart`: MIRT restart option, usually `:gr` or `:none`
+- `restart_cutoff`: restart cutoff passed to `MIRT.pogm_restart`
+
+Returns:
+- `x`: final denoised signal iterate
+"""
+function tv1d_kamilov_pogm(y::AbstractVector, λ::Real;
+                           maxiter::Integer=10000,
+                           L::Real=100000.0,
+                           restart::Symbol=:gr,
+                           restart_cutoff::Real=0.0)
+    x = similar(y, promote_type(eltype(y), typeof(λ), Float64))
+    return tv1d_kamilov_pogm!(x, y, λ; maxiter=maxiter, L=L, restart=restart,
+                              restart_cutoff=restart_cutoff)
 end
